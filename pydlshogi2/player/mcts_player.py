@@ -9,6 +9,7 @@ from pydlshogi2.player.base_player import BasePlayer
 
 import time
 import math
+import pickle
 
 # デフォルトGPU ID
 DEFAULT_GPU_ID = 0
@@ -625,6 +626,33 @@ class MCTSPlayer(BasePlayer):
             current_node.policy = probabilities
             current_node.value = float(value)
 
+    # sfen局面渡して評価させて最善手を表示を一括で
+    def evaluate_boards(self):
+        # 局面データ集の読み込み
+        # 構造は[(sfen指し手, sfen局面),...]を1局として、そのリスト
+        with open('/content/drive/MyDrive/jikken_kif_data/kifs.pkl', 'br') as f:
+            kif_data_list = pickle.load(f)
+        self.isready()
+        self.debug = True
+        self.set_limits(byoyomi=10000)
+        for kif in kif_data_list:
+            for move, board in kif:
+                self.position('sfen ' + board, [])
+                def go_and_print_bestmove():
+                    bestmove, ponder_move = self.go()
+                    return bestmove, ponder_move
+                self.future = self.executor.submit(go_and_print_bestmove)
+                print(f'human: {move}')
+                # 局面初期化
+                self.root_board.reset()
+                self.tree.reset_to_position(self.root_board.zobrist_hash(), [])
+
+                # 入力特徴量と評価待ちキューを初期化
+                self.init_features()
+                self.eval_queue = [EvalQueueElement() for _ in range(self.batch_size)]
+                self.current_batch_index = 0
+
 if __name__ == '__main__':
     player = MCTSPlayer()
-    player.run()
+    player.evaluate_boards()
+
