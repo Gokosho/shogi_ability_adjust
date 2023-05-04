@@ -10,6 +10,7 @@ from pydlshogi2.player.base_player import BasePlayer
 import time
 import math
 import pickle
+from tqdm import tqdm
 
 # デフォルトGPU ID
 DEFAULT_GPU_ID = 0
@@ -239,7 +240,7 @@ class MCTSPlayer(BasePlayer):
                 self.extend_time = self.time_limit > self.minimum_time
                 self.halt = None
 
-    def go(self):
+    def go(self, move_only=False):
         # 探索開始時刻の記録
         self.begin_time = time.time()
 
@@ -287,7 +288,7 @@ class MCTSPlayer(BasePlayer):
             self.eval_node()
 
         # 探索
-        self.search()
+        self.search(move_only=move_only)
 
         # 最善手の取得とPVの表示
         bestmove, bestvalue, ponder_move = self.get_bestmove_and_print_pv()
@@ -325,7 +326,7 @@ class MCTSPlayer(BasePlayer):
     def quit(self):
         self.stop()
 
-    def search(self):
+    def search(self, move_only=False):
         self.last_pv_print_time = 0
 
         # 探索経路のバッチ
@@ -393,7 +394,7 @@ class MCTSPlayer(BasePlayer):
                 elapsed_time = int((time.time() - self.begin_time) * 1000)
                 if elapsed_time > self.last_pv_print_time + self.pv_interval:
                     self.last_pv_print_time = elapsed_time
-                    self.get_bestmove_and_print_pv()
+                    self.get_bestmove_and_print_pv(move_only=move_only)
 
     # UCT探索
     def uct_search(self, board, current_node, trajectories):
@@ -489,7 +490,7 @@ class MCTSPlayer(BasePlayer):
         return np.argmax(ucb)
 
     # 最善手取得とinfoの表示
-    def get_bestmove_and_print_pv(self):
+    def get_bestmove_and_print_pv(self, move_only=False):
         # 探索にかかった時間を求める
         finish_time = time.time() - self.begin_time
 
@@ -523,11 +524,12 @@ class MCTSPlayer(BasePlayer):
             if ponder_move is None:
                 ponder_move = pv_node.child_move[selected_index]
 
-        print('info nps {} time {} nodes {} score cp {} pv {}'.format(
-            int(self.playout_count / finish_time) if finish_time > 0 else 0,
-            int(finish_time * 1000),
-            current_node.move_count,
-            cp, pv), flush=True)
+        if not move_only:
+            print('info nps {} time {} nodes {} score cp {} pv {}'.format(
+                int(self.playout_count / finish_time) if finish_time > 0 else 0,
+                int(finish_time * 1000),
+                current_node.move_count,
+                cp, pv), flush=True)
 
         return bestmove, bestvalue, ponder_move
 
@@ -627,32 +629,27 @@ class MCTSPlayer(BasePlayer):
             current_node.value = float(value)
 
     # sfen局面渡して評価させて最善手を表示を一括で
-    def evaluate_boards(self):
+    def evaluate_boards(self, move_only=False):
+        count = 0
+        match_count = 0
         # 局面データ集の読み込み
         # 構造は[(sfen指し手, sfen局面),...]を1局として、そのリスト
         with open('/content/drive/MyDrive/jikken_kif_data/kifs.pkl', 'br') as f:
             kif_data_list = pickle.load(f)
         self.isready()
-        self.debug = True
-        self.set_limits(byoyomi=10000)
-        for kif in kif_data_list:
+        # self.debug = True
+        self.set_limits(nodes=10000)
+        for kif in tqdm(kif_data_list):
             for move, board in kif:
                 self.position('sfen ' + board, [])
-                def go_and_print_bestmove():
-                    bestmove, ponder_move = self.go()
-                    return bestmove, ponder_move
-                self.future = self.executor.submit(go_and_print_bestmove)
-                print(f'human: {move}')
-                # 局面初期化
-                self.root_board.reset()
-                self.tree.reset_to_position(self.root_board.zobrist_hash(), [])
-
-                # 入力特徴量と評価待ちキューを初期化
-                self.init_features()
-                self.eval_queue = [EvalQueueElement() for _ in range(self.batch_size)]
-                self.current_batch_index = 0
+                bestmove, ponder_move = self.go(move_only=move_only)
+                count += 1
+                if move == bestmove:
+                    match_count += 1
+        print(count)
+        print(match_count)
 
 if __name__ == '__main__':
     player = MCTSPlayer()
-    player.evaluate_boards()
+    player.evaluate_boards(move_only=True)
 
