@@ -646,8 +646,8 @@ class MCTSPlayer(BasePlayer):
                 count += 1
                 if move == bestmove:
                     match_count += 1
-        print(count)
-        print(match_count)
+            print(count)
+            print(match_count)
 
 if __name__ == '__main__':
     player = MCTSPlayer()
